@@ -1,1 +1,1 @@
-# machine_learning
+꾸준함이 살 길이다.
