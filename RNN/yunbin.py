@@ -1,28 +1,29 @@
-from optparse import Option
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from tensorflow.keras.layers import Input, LSTM, Dense
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler, RobustScaler, Normalizer
 from tensorflow.keras import Model
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.layers import Input, Dropout, LSTM, Dense
+from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
-
 
 # 데이터 불러오기
-inputs = pd.read_csv('./data/train_input.csv')
-outputs = pd.read_csv('./data/train_output.csv')
+inputs = pd.read_csv('./train_input.csv')
+outputs = pd.read_csv('./train_output.csv')
 
 
 # nan 제거  -- 베이스라인이므로 간단한 처리를 위해 nan 항목 보간 없이 학습
 inputs = inputs.dropna(axis=1)
 
 
-# 주차 정보 수치 변환
-inputs['주차'] = [int(i.replace('주차', "")) for i in inputs['주차']]
 
+# 주차 정보 수치 변환
+# inputs 는 dictionary 자료형으로 '주차'가 key 이고 그 열의 값들이 value
+# value에 '주차' 단어를 삭제하는 구문
+inputs['주차'] = [int(i.replace('주차', "")) for i in inputs['주차']]
+inputs.to_csv('Input_NaN.csv', index=False)
 
 # scaler
 input_scaler = MinMaxScaler()
@@ -45,24 +46,38 @@ for i in outputs['Sample_no']:
     input_ts.append(sample)
 input_ts = np.concatenate(input_ts, axis=0)
 
-
+#input_ts = np.reshape(input_ts, (input_ts.shape[0], input_ts.shape[1], 1))
+print(input_ts.shape[0], input_ts.shape[1])
 # 셋 분리
+# https://teddylee777.github.io/scikit-learn/train-test-split
+# train 데이터에서 20%는 validation 용으로 분리
 train_x, val_x, train_y, val_y = train_test_split(input_ts, output_sc, test_size=0.2,
                                                   shuffle=True, random_state=0)
-
+print(train_x.shape)
 
 # 모델 정의
 def create_model():
     x = Input(shape=[7, 9])
     l1 = LSTM(64)(x)
-    out = Dense(3, activation='tanh')(l1)
+    out = Dense(3, activation='tanh')(l1)   # output 갯수에 해당 : 총 3개 (길이, 직경, 개화군)
     return Model(inputs=x, outputs=out)
 
-model = create_model()
+#model = create_model()
+
+model = Sequential()
+model.add(LSTM(128, input_shape=(train_x.shape[1], train_x.shape[2]), return_sequences=True))
+model.add(Dropout(0.2))
+#model.add(LSTM(512, return_sequences=True))
+#model.add(Dropout(0.3))
+model.add(LSTM(256))
+model.add(Dense(256))
+model.add(Dropout(0.2))
+model.add(Dense(3, activation='tanh'))
+
 model.summary()
 checkpointer = ModelCheckpoint(monitor='val_loss', filepath='baseline.h5',
                                verbose=1, save_best_only=True, save_weights_only=True)
-model.compile(loss='mse', optimizer=Adam(learning_rate=0.001), metrics=['mse'])
+model.compile(loss='mse', optimizer=Adam(lr=0.001), metrics=['mse'])
 
 
 # 학습
@@ -76,19 +91,17 @@ loss_ax.plot(hist.history['val_loss'], 'g', label='val_loss')
 loss_ax.set_xlabel('epoch')
 loss_ax.set_ylabel('loss')
 loss_ax.legend()
-plt.ylim([0.004, 0.010])
-# plt.axhline()
-plt.grid(True)
 plt.title('Training loss - Validation loss plot')
 plt.show()
+
 
 # 저장된 가중치 불러오기
 model.load_weights('baseline.h5')
 
 
 # 테스트셋 전처리 및 추론
-test_inputs = pd.read_csv('./data/test_input.csv')
-output_sample = pd.read_csv('./data/answer_sample.csv')
+test_inputs = pd.read_csv('./test_input.csv')
+output_sample = pd.read_csv('./answer_sample.csv')
 
 test_inputs = test_inputs[inputs.columns]
 test_inputs['주차'] = [int(i.replace('주차', "")) for i in test_inputs['주차']]
@@ -112,5 +125,4 @@ output_sample[['생장길이', '줄기직경', '개화군']] = prediction
 
 # 제출할 추론 결과 저장
 output_sample.to_csv('prediction.csv', index=False)
-
 
