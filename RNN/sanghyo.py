@@ -2,8 +2,9 @@ from optparse import Option
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.layers import Input, LSTM, Dense
-from tensorflow.keras import Model
+from tensorflow.keras.layers import Input, LSTM, Dense, Activation, Bidirectional
+from tensorflow.keras.models import Sequential
+from tensorflow.keras import Model, optimizers
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
@@ -16,10 +17,16 @@ inputs = pd.read_csv('./data/train_input.csv')
 outputs = pd.read_csv('./data/train_output.csv')
 
 
-# nan 제거  -- 베이스라인이므로 간단한 처리를 위해 nan 항목 보간 없이 학습
+# nan 제거
 inputs['강우감지'] = inputs['강우감지'].fillna(value=0)
+inputs['지습'] = inputs['지습'].fillna( inputs['지습'].mean() )
+
+# inputs['외부온도'] = inputs['외부온도'].fillna(value=0)
+# inputs['외부풍향'] = inputs['외부풍향'].fillna(value=0)
+inputs['외부풍속'] = inputs['외부풍속'].fillna( inputs['외부풍속'].mean() )
+
 inputs = inputs.dropna(axis=1)
-# inputs.to_csv("./1.csv") 
+inputs.to_csv("./1.csv") 
 
 # 주차 정보 수치 변환
 inputs['주차'] = [int(i.replace('주차', "")) for i in inputs['주차']]
@@ -31,8 +38,9 @@ output_scaler = MinMaxScaler()
 
 
 # scaling
-input_sc = input_scaler.fit_transform(inputs.iloc[:,3:].to_numpy())
-output_sc = output_scaler.fit_transform(outputs.iloc[:,3:].to_numpy())
+input_sc = input_scaler.fit_transform(inputs.iloc[:, 3:].to_numpy())
+output_sc = output_scaler.fit_transform(outputs.iloc[:, 3:].to_numpy())
+# outputs.iloc[:, 3:].to_csv("./2.csv") 
 
 
 # 입력 시계열화
@@ -47,16 +55,35 @@ input_ts = np.concatenate(input_ts, axis=0)
 
 
 # 셋 분리
-train_x, val_x, train_y, val_y = train_test_split(input_ts, output_sc, test_size=0.2, shuffle=True, random_state=0)
-
+train_x, val_x, train_y, val_y = train_test_split(input_ts, output_sc, test_size=0.15, shuffle=True, random_state=0)
+input_shape = (train_x.shape[1], train_x.shape[2])
 
 # 모델 정의
+def deep_lstm():
+    # https://buomsoo-kim.github.io/keras/2019/07/29/Easy-deep-learning-with-Keras-20.md/
+    model = Sequential()
+    model.add(Bidirectional(LSTM(128, return_sequences = True), input_shape=input_shape))
+    model.add(Bidirectional(LSTM(128, return_sequences = False)))
+    # model.add(LSTM(512, input_shape = (train_x.shape[1], train_x.shape[2]), return_sequences = True))
+    # model.add(LSTM(20, return_sequences = True))
+    # model.add(LSTM(128, return_sequences = True))
+    # model.add(LSTM(512, return_sequences = False))
+    model.add(Dense(3))
+    model.add(Activation('tanh'))    
+    return model
+
 def create_model():
-    x = Input(shape=[7, 10])
-    l1 = LSTM(64)(x)
-    out = Dense(3, activation='tanh')(l1)
+    x = Input(shape=input_shape)
+    # LSTM의 입력인 x는 기본적으로 3차원 구조를 갖는다. 첫 번째 차원은 데이터 개수다 (sample 개수, batch 개수라고도 한다). 
+    # 이 경우는 1이다. 두 번째 차원은 시간축의 차원이다 (time step size라고도 한다). 이 경우는 x가 1,2,3,4,5로 5개가 연속되므로 5이다. 
+    # LSTM이 5번 반복 (recurrent)되는 것이다. 마지막 차원은 LSTM 입력층에 입력되는 데이터의 개수다 (feature 개수라고도 한다). 
+    # 이 경우는 LSTM의 각 스텝에 데이터가 한 개씩 들어가므로 1이다. 따라서 입력 데이터의 차원 (input_shape, batch_shape라 한다)은 (1, 5, 1)이다.
+
+    l1 = LSTM(256)(x)
+    out = (Dense(3, activation='tanh'))(l1)
     return Model(inputs=x, outputs=out)
 
+# model = deep_lstm()
 model = create_model()
 model.summary()
 checkpointer = ModelCheckpoint(monitor='val_loss', filepath='baseline.h5',
@@ -65,7 +92,7 @@ model.compile(loss='mse', optimizer=Adam(learning_rate=0.001), metrics=['mse'])
 
 
 # 학습
-hist = model.fit(train_x, train_y, batch_size=32, epochs=200, validation_data=(val_x, val_y), callbacks=[checkpointer])
+hist = model.fit(train_x, train_y, batch_size=32, epochs=300, validation_data=(val_x, val_y), callbacks=[checkpointer])
 
 
 # loss 히스토리 확인
@@ -75,7 +102,7 @@ loss_ax.plot(hist.history['val_loss'], 'g', label='val_loss')
 loss_ax.set_xlabel('epoch')
 loss_ax.set_ylabel('loss')
 loss_ax.legend()
-plt.ylim([0.0, 0.004])
+plt.ylim([0.0, 0.002])
 # plt.axhline()
 plt.grid(True)
 plt.title('Training loss - Validation loss plot')
