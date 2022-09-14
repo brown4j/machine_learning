@@ -17,8 +17,9 @@ outputs = pd.read_csv('./data/train_output.csv')
 
 
 # nan 제거  -- 베이스라인이므로 간단한 처리를 위해 nan 항목 보간 없이 학습
+inputs['강우감지'] = inputs['강우감지'].fillna(value=0)
 inputs = inputs.dropna(axis=1)
-
+# inputs.to_csv("./1.csv") 
 
 # 주차 정보 수치 변환
 inputs['주차'] = [int(i.replace('주차', "")) for i in inputs['주차']]
@@ -39,21 +40,19 @@ input_ts = []
 for i in outputs['Sample_no']:
     sample = input_sc[inputs['Sample_no'] == i]
     if len(sample < 7):
-        sample = np.append(np.zeros((7-len(sample), sample.shape[-1])), sample,
-                           axis=0)
+        sample = np.append(np.zeros((7-len(sample), sample.shape[-1])), sample, axis=0)
     sample = np.expand_dims(sample, axis=0)
     input_ts.append(sample)
 input_ts = np.concatenate(input_ts, axis=0)
 
 
 # 셋 분리
-train_x, val_x, train_y, val_y = train_test_split(input_ts, output_sc, test_size=0.2,
-                                                  shuffle=True, random_state=0)
+train_x, val_x, train_y, val_y = train_test_split(input_ts, output_sc, test_size=0.2, shuffle=True, random_state=0)
 
 
 # 모델 정의
 def create_model():
-    x = Input(shape=[7, 9])
+    x = Input(shape=[7, 10])
     l1 = LSTM(64)(x)
     out = Dense(3, activation='tanh')(l1)
     return Model(inputs=x, outputs=out)
@@ -66,7 +65,7 @@ model.compile(loss='mse', optimizer=Adam(learning_rate=0.001), metrics=['mse'])
 
 
 # 학습
-hist = model.fit(train_x, train_y, batch_size=32, epochs=100, validation_data=(val_x, val_y), callbacks=[checkpointer])
+hist = model.fit(train_x, train_y, batch_size=32, epochs=200, validation_data=(val_x, val_y), callbacks=[checkpointer])
 
 
 # loss 히스토리 확인
@@ -76,7 +75,7 @@ loss_ax.plot(hist.history['val_loss'], 'g', label='val_loss')
 loss_ax.set_xlabel('epoch')
 loss_ax.set_ylabel('loss')
 loss_ax.legend()
-plt.ylim([0.004, 0.010])
+plt.ylim([0.0, 0.004])
 # plt.axhline()
 plt.grid(True)
 plt.title('Training loss - Validation loss plot')
