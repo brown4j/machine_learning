@@ -10,8 +10,8 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
 
 # 데이터 불러오기
-inputs = pd.read_csv('./train_input.csv')
-outputs = pd.read_csv('./train_output.csv')
+inputs = pd.read_csv('./data/train_input.csv')
+outputs = pd.read_csv('./data/train_output.csv')
 
 
 # nan 제거  -- 베이스라인이므로 간단한 처리를 위해 nan 항목 보간 없이 학습
@@ -56,6 +56,20 @@ train_x, val_x, train_y, val_y = train_test_split(input_ts, output_sc, test_size
 print(train_x.shape)
 
 # 모델 정의
+def deep_lstm():
+    model = Sequential()
+    model.add(LSTM(20, input_shape = (49,1), return_sequences = True))
+    model.add(LSTM(20, return_sequences = True))
+    model.add(LSTM(20, return_sequences = True))
+    model.add(LSTM(20, return_sequences = False))
+    model.add(Dense(46))
+    model.add(Activation('softmax'))
+    
+    adam = optimizers.Adam(lr = 0.001)
+    model.compile(loss = 'categorical_crossentropy', optimizer = adam, metrics = ['accuracy'])
+    
+    return model
+
 def create_model():
     x = Input(shape=[7, 9])
     l1 = LSTM(64)(x)
@@ -81,7 +95,7 @@ model.compile(loss='mse', optimizer=Adam(lr=0.001), metrics=['mse'])
 
 
 # 학습
-hist = model.fit(train_x, train_y, batch_size=32, epochs=100, validation_data=(val_x, val_y), callbacks=[checkpointer])
+hist = model.fit(train_x, train_y, batch_size=32, epochs=300, validation_data=(val_x, val_y), callbacks=[checkpointer])
 
 
 # loss 히스토리 확인
@@ -100,8 +114,8 @@ model.load_weights('baseline.h5')
 
 
 # 테스트셋 전처리 및 추론
-test_inputs = pd.read_csv('./test_input.csv')
-output_sample = pd.read_csv('./answer_sample.csv')
+test_inputs = pd.read_csv('./data/test_input.csv')
+output_sample = pd.read_csv('./data/answer_sample.csv')
 
 test_inputs = test_inputs[inputs.columns]
 test_inputs['주차'] = [int(i.replace('주차', "")) for i in test_inputs['주차']]
